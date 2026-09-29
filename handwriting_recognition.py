@@ -69,7 +69,7 @@ class HandwritingApp:
 
     def load_model(self):
         try:
-            messagebox.showinfo("로드 중", "MNIST 모델을 로드하는 중입니다...\n약 30초 정도 소요됩니다.")
+            messagebox.showinfo("로드 중", "MNIST 모델을 로드하는 중입니다...\n약 1-2분 정도 소요됩니다.")
 
             # MNIST 데이터 로드 및 모델 생성
             (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
@@ -82,7 +82,7 @@ class HandwritingApp:
                 keras.layers.MaxPooling2D((2, 2)),
                 keras.layers.Conv2D(64, (3, 3), activation='relu'),
                 keras.layers.Flatten(),
-                keras.layers.Dense(64, activation='relu'),
+                keras.layers.Dense(128, activation='relu'),
                 keras.layers.Dropout(0.5),
                 keras.layers.Dense(10, activation='softmax')
             ])
@@ -97,9 +97,9 @@ class HandwritingApp:
             x_train = np.expand_dims(x_train, -1)
             x_test = np.expand_dims(x_test, -1)
 
-            # 모델 훈련
+            # 모델 훈련 (epochs 증가)
             print("모델 훈련 중...")
-            self.model.fit(x_train, y_train, batch_size=128, epochs=3,
+            self.model.fit(x_train, y_train, batch_size=128, epochs=10,
                           validation_data=(x_test, y_test), verbose=0)
 
             messagebox.showinfo("완료", "모델 로드 완료!\n이제 손글씨를 그려보세요.")
@@ -124,31 +124,34 @@ class HandwritingApp:
 
     def recognize(self):
         try:
-            # Canvas에서 이미지 추출
-            ps = self.canvas.postscript(colormode='color')
-            img = Image.open(io.BytesIO(ps.encode('utf-8')))
-
-            # PIL로 Canvas 이미지 캡처
+            # Canvas에서 이미지 캡처
             img = Image.new('L', (280, 280), color=255)
+            draw = ImageDraw.Draw(img)
 
             # Canvas의 모든 아이템 가져오기
-            coords = []
             for item_id in self.canvas.find_all():
-                coords_data = self.canvas.coords(item_id)
-                if coords_data:
-                    coords.append(coords_data)
+                item_type = self.canvas.type(item_id)
+                if item_type == "line":
+                    coords = self.canvas.coords(item_id)
+                    if len(coords) >= 4:
+                        # 좌표를 2개씩 쌍으로 묶기
+                        for i in range(0, len(coords) - 2, 2):
+                            x1, y1, x2, y2 = coords[i], coords[i+1], coords[i+2], coords[i+3]
+                            draw.line([(x1, y1), (x2, y2)], fill=0, width=6)
 
-            # 이미지 그리기
-            draw = ImageDraw.Draw(img)
-            for coord in coords:
-                if len(coord) >= 4:
-                    draw.line(coord, fill=0, width=5)
+            # 이미지 정규화 및 리사이즈
+            img_array = np.array(img, dtype=np.float32)
+
+            # 역반전 (검은색이 배경, 흰색이 글씨) - MNIST와 맞추기
+            img_array = 255 - img_array
+            img_array = img_array / 255.0
 
             # 28x28로 리사이즈
-            img = img.resize((28, 28), Image.Resampling.LANCZOS)
+            img_resized = Image.fromarray((img_array * 255).astype(np.uint8))
+            img_resized = img_resized.resize((28, 28), Image.Resampling.LANCZOS)
 
-            # numpy 배열로 변환
-            img_array = np.array(img) / 255.0
+            # numpy 배열로 변환 및 정규화
+            img_array = np.array(img_resized, dtype=np.float32) / 255.0
             img_array = np.expand_dims(img_array, axis=0)
             img_array = np.expand_dims(img_array, axis=-1)
 
